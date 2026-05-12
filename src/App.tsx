@@ -153,7 +153,7 @@ export default function App() {
     }
   }
 
-  function exportCsv() {
+  async function exportXlsx() {
     const rows = [
       ["类型", "送货日期", "经办人", "对象", "金额", "已收款", "代收款", "状态/方式", "备注"],
       ...data.orders.map((order) => [
@@ -184,14 +184,11 @@ export default function App() {
       ]),
     ];
 
-    const csv = rows.map((row) => row.map((cell) => `"${cell.replaceAll('"', '""')}"`).join(",")).join("\n");
-    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `店铺记账-${today}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "订单记录");
+    XLSX.writeFile(workbook, `店铺记账-${today}.xlsx`);
   }
 
   if (authLoading) {
@@ -288,9 +285,9 @@ export default function App() {
             <RefreshCw size={16} />
             刷新
           </button>
-          <button className="secondary" onClick={exportCsv}>
+          <button className="secondary" onClick={exportXlsx}>
             <Download size={16} />
-            导出 CSV
+            导出 XLSX
           </button>
           {supabase && (
             <button className="secondary" onClick={() => void supabase?.auth.signOut()}>
@@ -437,7 +434,7 @@ function OrdersPanel({
 }) {
   const emptyOrderForm = (): OrderInput => ({
     orderNo: buildOrderNo(),
-    shopName: "",
+    shopName: "中合",
     customerName: "",
     orderDate: today,
     amount: 0,
@@ -518,7 +515,6 @@ function OrdersPanel({
         <h2><Plus size={18} /> {editingId ? "编辑订单" : "新增订单"}</h2>
         <div className="field-grid">
           <TextField label="订单号" value={form.orderNo} onChange={(value) => setForm({ ...form, orderNo: value })} required />
-          <TextField label="经办人" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
           <TextField label="客户" value={form.customerName} onChange={(value) => setForm({ ...form, customerName: value })} required />
           <DateField label="送货日期" value={form.orderDate} onChange={(value) => setForm({ ...form, orderDate: value })} />
           <NumberField label="订单金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value, receivableAmount: Math.max(value - form.depositAmount, 0) })} />
