@@ -31,6 +31,14 @@ function buildOrderNo() {
   return `DD-${stamp}`;
 }
 
+function getErrorMessage(err: unknown) {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return "操作失败";
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -47,7 +55,7 @@ export default function App() {
     try {
       setData(await loadData());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "数据加载失败");
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -123,7 +131,7 @@ export default function App() {
       await action();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "操作失败");
+      setError(getErrorMessage(err));
     }
   }
 

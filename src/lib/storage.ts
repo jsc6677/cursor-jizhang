@@ -62,6 +62,14 @@ function writeLocal(data: AppData) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+async function getCurrentUserId() {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  return data.user?.id ?? null;
+}
+
 const toOrder = (row: Record<string, unknown>): Order => ({
   id: String(row.id),
   orderNo: String(row.order_no),
@@ -125,9 +133,11 @@ export async function saveOrder(input: OrderInput): Promise<Order> {
     return order;
   }
 
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("orders")
     .insert({
+      user_id: userId,
       order_no: input.orderNo,
       shop_name: input.shopName,
       customer_name: input.customerName,
@@ -166,9 +176,11 @@ export async function saveReceipt(input: ReceiptInput): Promise<Receipt> {
     return receipt;
   }
 
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("receipts")
     .insert({
+      user_id: userId,
       order_id: input.orderId,
       received_at: input.receivedAt,
       amount: input.amount,
@@ -201,9 +213,11 @@ export async function savePayment(input: PaymentInput): Promise<Payment> {
     return payment;
   }
 
+  const userId = await getCurrentUserId();
   const { data, error } = await supabase
     .from("payments")
     .insert({
+      user_id: userId,
       shop_name: input.shopName,
       paid_at: input.paidAt,
       amount: input.amount,
