@@ -41,6 +41,14 @@ function getOrderIdFromHash() {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function getSpreadsheetViewUrl(url: string, path: string) {
+  const extension = path.split(".").pop()?.toLowerCase();
+  if (extension === "xls" || extension === "xlsx") {
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -580,7 +588,18 @@ function OrdersPanel({
                   <td>{currency(order.depositAmount)}</td>
                   <td>{currency(order.receivableAmount)}</td>
                   <td>{order.photoUrl ? <a href={order.photoUrl} target="_blank" rel="noreferrer">查看</a> : "-"}</td>
-                  <td>{order.spreadsheetUrl ? <a href={order.spreadsheetUrl} target="_blank" rel="noreferrer">下载</a> : "-"}</td>
+                  <td>
+                    {order.spreadsheetUrl ? (
+                      <div className="file-actions">
+                        <a href={getSpreadsheetViewUrl(order.spreadsheetUrl, order.spreadsheetPath)} target="_blank" rel="noreferrer">
+                          在线查看
+                        </a>
+                        <a href={order.spreadsheetUrl} target="_blank" rel="noreferrer" download>
+                          下载
+                        </a>
+                      </div>
+                    ) : "-"}
+                  </td>
                   <td>
                     <select
                       className="status-select"
