@@ -11,15 +11,25 @@ $$;
 
 grant usage on schema public to anon, authenticated;
 grant execute on function public.is_allowed_app_user() to authenticated;
-grant select, insert, delete on public.orders to authenticated;
-grant select, insert, delete on public.receipts to authenticated;
-grant select, insert, delete on public.payments to authenticated;
+alter table public.orders add column if not exists deposit_amount numeric(12, 2) not null default 0 check (deposit_amount >= 0);
+alter table public.orders add column if not exists photo_path text not null default '';
+grant select, insert, update, delete on public.orders to authenticated;
+grant select, insert, update, delete on public.receipts to authenticated;
+grant select, insert, update, delete on public.payments to authenticated;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('order-photos', 'order-photos', false, 10485760, array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+on conflict (id) do update
+set public = false,
+    file_size_limit = 10485760,
+    allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
 drop policy if exists "Users can read own orders" on public.orders;
 drop policy if exists "Users can insert own orders" on public.orders;
 drop policy if exists "Users can delete own orders" on public.orders;
 drop policy if exists "Allowed users can read orders" on public.orders;
 drop policy if exists "Allowed users can insert orders" on public.orders;
+drop policy if exists "Allowed users can update orders" on public.orders;
 drop policy if exists "Allowed users can delete orders" on public.orders;
 
 drop policy if exists "Users can read own receipts" on public.receipts;
@@ -34,7 +44,13 @@ drop policy if exists "Users can insert own payments" on public.payments;
 drop policy if exists "Users can delete own payments" on public.payments;
 drop policy if exists "Allowed users can read payments" on public.payments;
 drop policy if exists "Allowed users can insert payments" on public.payments;
+drop policy if exists "Allowed users can update payments" on public.payments;
 drop policy if exists "Allowed users can delete payments" on public.payments;
+
+drop policy if exists "Allowed users can read order photos" on storage.objects;
+drop policy if exists "Allowed users can upload order photos" on storage.objects;
+drop policy if exists "Allowed users can update order photos" on storage.objects;
+drop policy if exists "Allowed users can delete order photos" on storage.objects;
 
 create policy "Allowed users can read orders"
   on public.orders for select
@@ -43,6 +59,11 @@ create policy "Allowed users can read orders"
 create policy "Allowed users can insert orders"
   on public.orders for insert
   with check (public.is_allowed_app_user() and auth.uid() = user_id);
+
+create policy "Allowed users can update orders"
+  on public.orders for update
+  using (public.is_allowed_app_user())
+  with check (public.is_allowed_app_user());
 
 create policy "Allowed users can delete orders"
   on public.orders for delete
@@ -68,6 +89,32 @@ create policy "Allowed users can insert payments"
   on public.payments for insert
   with check (public.is_allowed_app_user() and auth.uid() = user_id);
 
+create policy "Allowed users can update payments"
+  on public.payments for update
+  using (public.is_allowed_app_user())
+  with check (public.is_allowed_app_user());
+
 create policy "Allowed users can delete payments"
   on public.payments for delete
   using (public.is_allowed_app_user());
+
+create policy "Allowed users can read order photos"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'order-photos' and public.is_allowed_app_user());
+
+create policy "Allowed users can upload order photos"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'order-photos' and public.is_allowed_app_user());
+
+create policy "Allowed users can update order photos"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'order-photos' and public.is_allowed_app_user())
+  with check (bucket_id = 'order-photos' and public.is_allowed_app_user());
+
+create policy "Allowed users can delete order photos"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'order-photos' and public.is_allowed_app_user());

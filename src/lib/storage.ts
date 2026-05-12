@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type { AppData, Order, OrderInput, Payment, PaymentInput, Receipt, ReceiptInput } from "../types";
 
 const STORAGE_KEY = "shop-ledger-data";
+const ORDER_PHOTO_BUCKET = "order-photos";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -14,7 +15,10 @@ const sampleData: AppData = {
       customerName: "张三",
       orderDate: today,
       amount: 1280,
+      depositAmount: 300,
       status: "partial",
+      photoPath: "",
+      photoUrl: "",
       note: "演示订单，可删除",
       createdAt: new Date().toISOString(),
     },
@@ -48,6 +52,11 @@ function newId() {
   return crypto.randomUUID();
 }
 
+function cleanOrderInput(input: OrderInput): Omit<OrderInput, "photoFile"> {
+  const { photoFile: _photoFile, ...order } = input;
+  return order;
+}
+
 function readLocal(): AppData {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -70,14 +79,38 @@ async function getCurrentUserId() {
   return data.user?.id ?? null;
 }
 
-const toOrder = (row: Record<string, unknown>): Order => ({
+async function getSignedPhotoUrl(photoPath: string) {
+  if (!supabase || !photoPath) return "";
+
+  const { data, error } = await supabase.storage.from(ORDER_PHOTO_BUCKET).createSignedUrl(photoPath, 60 * 60);
+  if (error) return "";
+  return data.signedUrl;
+}
+
+async function uploadOrderPhoto(file: File | null | undefined, orderId: string, userId: string | null) {
+  if (!supabase || !file || !userId) return "";
+
+  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const photoPath = `${userId}/${orderId}/${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from(ORDER_PHOTO_BUCKET).upload(photoPath, file, {
+    cacheControl: "3600",
+    upsert: true,
+  });
+  if (error) throw error;
+  return photoPath;
+}
+
+const toOrder = (row: Record<string, unknown>, photoUrl = ""): Order => ({
   id: String(row.id),
   orderNo: String(row.order_no),
   shopName: String(row.shop_name),
   customerName: String(row.customer_name),
   orderDate: String(row.order_date),
   amount: Number(row.amount),
+  depositAmount: Number(row.deposit_amount ?? 0),
   status: row.status as Order["status"],
+  photoPath: String(row.photo_path ?? ""),
+  photoUrl,
   note: String(row.note ?? ""),
   createdAt: String(row.created_at),
 });
@@ -118,8 +151,12 @@ export async function loadData(): Promise<AppData> {
   const error = ordersError ?? receiptsError ?? paymentsError;
   if (error) throw error;
 
+  const mappedOrders = await Promise.all(
+    (orders ?? []).map(async (order) => toOrder(order, await getSignedPhotoUrl(String(order.photo_path ?? "")))),
+  );
+
   return {
-    orders: (orders ?? []).map(toOrder),
+    orders: mappedOrders,
     receipts: (receipts ?? []).map(toReceipt),
     payments: (payments ?? []).map(toPayment),
   };
@@ -128,29 +165,68 @@ export async function loadData(): Promise<AppData> {
 export async function saveOrder(input: OrderInput): Promise<Order> {
   if (!supabase) {
     const data = readLocal();
-    const order: Order = { ...input, id: newId(), createdAt: new Date().toISOString() };
+    const order: Order = { ...cleanOrderInput(input), id: newId(), photoUrl: "", createdAt: new Date().toISOString() };
     writeLocal({ ...data, orders: [order, ...data.orders] });
     return order;
   }
 
   const userId = await getCurrentUserId();
+  const orderId = newId();
+  const photoPath = await uploadOrderPhoto(input.photoFile, orderId, userId);
   const { data, error } = await supabase
     .from("orders")
     .insert({
+      id: orderId,
       user_id: userId,
       order_no: input.orderNo,
       shop_name: input.shopName,
       customer_name: input.customerName,
       order_date: input.orderDate,
       amount: input.amount,
+      deposit_amount: input.depositAmount,
       status: input.status,
+      photo_path: photoPath || input.photoPath,
       note: input.note,
     })
     .select()
     .single();
 
   if (error) throw error;
-  return toOrder(data);
+  return toOrder(data, await getSignedPhotoUrl(String(data.photo_path ?? "")));
+}
+
+export async function updateOrder(id: string, input: OrderInput): Promise<Order> {
+  if (!supabase) {
+    const data = readLocal();
+    const nextOrder = cleanOrderInput(input);
+    writeLocal({
+      ...data,
+      orders: data.orders.map((order) => (order.id === id ? { ...order, ...nextOrder, photoUrl: "" } : order)),
+    });
+    return { ...nextOrder, id, photoUrl: "", createdAt: new Date().toISOString() };
+  }
+
+  const userId = await getCurrentUserId();
+  const uploadedPhotoPath = await uploadOrderPhoto(input.photoFile, id, userId);
+  const { data, error } = await supabase
+    .from("orders")
+    .update({
+      order_no: input.orderNo,
+      shop_name: input.shopName,
+      customer_name: input.customerName,
+      order_date: input.orderDate,
+      amount: input.amount,
+      deposit_amount: input.depositAmount,
+      status: input.status,
+      photo_path: uploadedPhotoPath || input.photoPath,
+      note: input.note,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return toOrder(data, await getSignedPhotoUrl(String(data.photo_path ?? "")));
 }
 
 export async function removeOrder(id: string): Promise<void> {

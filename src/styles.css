@@ -190,6 +190,10 @@ label {
   align-items: start;
 }
 
+.orders-layout {
+  grid-template-columns: 1fr;
+}
+
 .card {
   padding: 22px;
 }
@@ -205,12 +209,29 @@ label {
 
 .field-grid {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
-.form-card button[type="submit"] {
-  width: 100%;
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  color: #66758c;
+  font-size: 12px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 18px;
+}
+
+.form-actions button {
+  flex: 1 1 auto;
+}
+
+.plain {
+  box-shadow: none;
 }
 
 .table-card {
@@ -275,6 +296,16 @@ th {
   color: #ef4444;
   background: #fee2e2;
   padding: 0;
+}
+
+.icon-button.edit {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .notice,
@@ -349,6 +380,10 @@ th {
 @media (max-width: 980px) {
   .hero,
   .panel-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .field-grid {
     grid-template-columns: 1fr;
   }
 

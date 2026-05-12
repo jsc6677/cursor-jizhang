@@ -7,7 +7,10 @@ export interface Order {
   customerName: string;
   orderDate: string;
   amount: number;
+  depositAmount: number;
   status: OrderStatus;
+  photoPath: string;
+  photoUrl: string;
   note: string;
   createdAt: string;
 }
@@ -39,6 +42,8 @@ export interface AppData {
   payments: Payment[];
 }
 
-export type OrderInput = Omit<Order, "id" | "createdAt">;
+export type OrderInput = Omit<Order, "id" | "createdAt" | "photoUrl"> & {
+  photoFile?: File | null;
+};
 export type ReceiptInput = Omit<Receipt, "id" | "createdAt">;
 export type PaymentInput = Omit<Payment, "id" | "createdAt">;

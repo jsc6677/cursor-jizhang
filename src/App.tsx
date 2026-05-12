@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { BarChart3, Download, LogOut, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
+import { BarChart3, Download, LogOut, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { allowedEmailText, isAllowedEmail } from "./lib/access";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { loadData, removeOrder, removePayment, removeReceipt, saveOrder, savePayment, saveReceipt } from "./lib/storage";
+import { loadData, removeOrder, removePayment, removeReceipt, saveOrder, savePayment, saveReceipt, updateOrder } from "./lib/storage";
 import type { AppData, OrderInput, OrderStatus, PaymentInput, ReceiptInput } from "./types";
 
 const emptyData: AppData = { orders: [], receipts: [], payments: [] };
@@ -27,8 +27,7 @@ function currency(value: number) {
 }
 
 function buildOrderNo() {
-  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
-  return `DD-${stamp}`;
+  return new Date().toISOString().slice(0, 10).replaceAll("-", "");
 }
 
 function getErrorMessage(err: unknown) {
@@ -96,7 +95,8 @@ export default function App() {
   const stats = useMemo(() => {
     const activeOrders = data.orders.filter((order) => order.status !== "cancelled");
     const sales = activeOrders.reduce((sum, order) => sum + order.amount, 0);
-    const received = data.receipts.reduce((sum, receipt) => sum + receipt.amount, 0);
+    const deposits = activeOrders.reduce((sum, order) => sum + order.depositAmount, 0);
+    const received = data.receipts.reduce((sum, receipt) => sum + receipt.amount, deposits);
     const paid = data.payments.reduce((sum, payment) => sum + payment.amount, 0);
     return {
       orderCount: activeOrders.length,
@@ -137,19 +137,20 @@ export default function App() {
 
   function exportCsv() {
     const rows = [
-      ["类型", "日期", "店铺", "对象", "金额", "状态/方式", "备注"],
+      ["类型", "日期", "经办人", "对象", "金额", "定金", "状态/方式", "备注"],
       ...data.orders.map((order) => [
         "订单",
         order.orderDate,
         order.shopName,
         order.customerName,
         String(order.amount),
+        String(order.depositAmount),
         orderStatusText[order.status],
         order.note,
       ]),
       ...data.receipts.map((receipt) => {
         const order = data.orders.find((item) => item.id === receipt.orderId);
-        return ["收款", receipt.receivedAt, order?.shopName ?? "", order?.customerName ?? "", String(receipt.amount), receipt.method, receipt.note];
+        return ["收款", receipt.receivedAt, order?.shopName ?? "", order?.customerName ?? "", String(receipt.amount), "", receipt.method, receipt.note];
       }),
       ...data.payments.map((payment) => [
         "付款",
@@ -157,6 +158,7 @@ export default function App() {
         payment.shopName,
         payment.payee,
         String(payment.amount),
+        "",
         payment.category,
         payment.note,
       ]),
@@ -183,7 +185,7 @@ export default function App() {
           <div className="brand-mark">
             <ShieldCheck size={28} />
           </div>
-          <h1>店铺记账</h1>
+          <h1>中合订单管理</h1>
           <p>请输入邮箱获取登录链接。登录后即可登记订单、收款和付款。</p>
           <form onSubmit={handleLogin} className="stack">
             <label>
@@ -222,8 +224,8 @@ export default function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">{isSupabaseConfigured ? "Supabase 数据库模式" : "本地演示模式"}</p>
-          <h1>店铺订单与收付款登记</h1>
-          <p>记录订单、收款、付款，并自动汇总未收款和利润。部署到 GitHub Pages 后也可以继续使用。</p>
+          <h1>中合订单管理</h1>
+          <p>更新后请及时导出！避免丢失数据！</p>
         </div>
         <div className="hero-actions">
           <button className="secondary" onClick={() => void refresh()} disabled={loading}>
@@ -266,6 +268,7 @@ export default function App() {
           data={data}
           receiptsByOrder={receiptsByOrder}
           onAdd={(input) => mutate(() => saveOrder(input))}
+          onUpdate={(id, input) => mutate(() => updateOrder(id, input))}
           onRemove={(id) => mutate(() => removeOrder(id))}
         />
       )}
@@ -301,48 +304,107 @@ function OrdersPanel({
   data,
   receiptsByOrder,
   onAdd,
+  onUpdate,
   onRemove,
 }: {
   data: AppData;
   receiptsByOrder: Record<string, number>;
   onAdd: (input: OrderInput) => Promise<unknown>;
+  onUpdate: (id: string, input: OrderInput) => Promise<unknown>;
   onRemove: (id: string) => Promise<unknown>;
 }) {
-  const [form, setForm] = useState<OrderInput>({
+  const emptyOrderForm = (): OrderInput => ({
     orderNo: buildOrderNo(),
     shopName: "",
     customerName: "",
     orderDate: today,
     amount: 0,
+    depositAmount: 0,
     status: "unpaid",
+    photoPath: "",
+    photoFile: null,
     note: "",
   });
+  const [form, setForm] = useState<OrderInput>({
+    ...emptyOrderForm(),
+  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [photoName, setPhotoName] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await onAdd(form);
-    setForm({ ...form, orderNo: buildOrderNo(), customerName: "", amount: 0, note: "" });
+    if (editingId) {
+      await onUpdate(editingId, form);
+    } else {
+      await onAdd(form);
+    }
+    setEditingId(null);
+    setPhotoName("");
+    setForm(emptyOrderForm());
+  }
+
+  function startEdit(orderId: string) {
+    const order = data.orders.find((item) => item.id === orderId);
+    if (!order) return;
+
+    setEditingId(order.id);
+    setPhotoName(order.photoPath ? "已上传订单照片" : "");
+    setForm({
+      orderNo: order.orderNo,
+      shopName: order.shopName,
+      customerName: order.customerName,
+      orderDate: order.orderDate,
+      amount: order.amount,
+      depositAmount: order.depositAmount,
+      status: order.status,
+      photoPath: order.photoPath,
+      photoFile: null,
+      note: order.note,
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setPhotoName("");
+    setForm(emptyOrderForm());
   }
 
   return (
-    <section className="panel-layout">
+    <section className="panel-layout orders-layout">
       <form className="card form-card" onSubmit={submit}>
-        <h2><Plus size={18} /> 新增订单</h2>
+        <h2><Plus size={18} /> {editingId ? "编辑订单" : "新增订单"}</h2>
         <div className="field-grid">
           <TextField label="订单号" value={form.orderNo} onChange={(value) => setForm({ ...form, orderNo: value })} required />
-          <TextField label="店铺" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
+          <TextField label="经办人" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
           <TextField label="客户" value={form.customerName} onChange={(value) => setForm({ ...form, customerName: value })} required />
           <DateField label="订单日期" value={form.orderDate} onChange={(value) => setForm({ ...form, orderDate: value })} />
           <NumberField label="订单金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} />
+          <NumberField label="定金" value={form.depositAmount} onChange={(value) => setForm({ ...form, depositAmount: value })} />
           <label>
             状态
             <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as OrderStatus })}>
               {Object.entries(orderStatusText).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
+          <label>
+            订单照片
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setPhotoName(file?.name ?? "");
+                setForm({ ...form, photoFile: file });
+              }}
+            />
+            {photoName && <span className="field-hint">{photoName}</span>}
+          </label>
           <TextField label="备注" value={form.note} onChange={(value) => setForm({ ...form, note: value })} />
         </div>
-        <button type="submit">保存订单</button>
+        <div className="form-actions">
+          <button type="submit">{editingId ? "保存修改" : "保存订单"}</button>
+          {editingId && <button type="button" className="secondary plain" onClick={cancelEdit}>取消编辑</button>}
+        </div>
       </form>
 
       <div className="card table-card">
@@ -353,10 +415,12 @@ function OrdersPanel({
               <tr>
                 <th>订单号</th>
                 <th>日期</th>
-                <th>店铺</th>
+                <th>经办人</th>
                 <th>客户</th>
                 <th>金额</th>
+                <th>定金</th>
                 <th>已收</th>
+                <th>照片</th>
                 <th>状态</th>
                 <th></th>
               </tr>
@@ -369,9 +433,16 @@ function OrdersPanel({
                   <td>{order.shopName}</td>
                   <td>{order.customerName}</td>
                   <td>{currency(order.amount)}</td>
-                  <td>{currency(receiptsByOrder[order.id] ?? 0)}</td>
+                  <td>{currency(order.depositAmount)}</td>
+                  <td>{currency(order.depositAmount + (receiptsByOrder[order.id] ?? 0))}</td>
+                  <td>{order.photoUrl ? <a href={order.photoUrl} target="_blank" rel="noreferrer">查看</a> : "-"}</td>
                   <td><span className={`badge ${order.status}`}>{orderStatusText[order.status]}</span></td>
-                  <td><IconButton label="删除订单" onClick={() => void onRemove(order.id)} /></td>
+                  <td>
+                    <div className="row-actions">
+                      <IconButton label="编辑订单" variant="edit" onClick={() => startEdit(order.id)} />
+                      <IconButton label="删除订单" onClick={() => void onRemove(order.id)} />
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -473,7 +544,7 @@ function PaymentsPanel({
       <form className="card form-card" onSubmit={submit}>
         <h2><Plus size={18} /> 新增付款</h2>
         <div className="field-grid">
-          <TextField label="店铺" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
+          <TextField label="经办人" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
           <DateField label="付款日期" value={form.paidAt} onChange={(value) => setForm({ ...form, paidAt: value })} />
           <NumberField label="付款金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} />
           <label>
@@ -490,7 +561,7 @@ function PaymentsPanel({
       <SimpleRecordTable title="付款记录" rows={data.payments.map((payment) => ({
         id: payment.id,
         cells: [payment.paidAt, payment.shopName, payment.payee, currency(payment.amount), payment.category, payment.note],
-      }))} headers={["日期", "店铺", "收款方", "金额", "类型", "备注"]} onRemove={onRemove} />
+      }))} headers={["日期", "经办人", "收款方", "金额", "类型", "备注"]} onRemove={onRemove} />
     </section>
   );
 }
@@ -501,7 +572,7 @@ function ReportsPanel({ data, receiptsByOrder }: { data: AppData; receiptsByOrde
     data.orders.forEach((order) => {
       const row = shops.get(order.shopName) ?? { sales: 0, received: 0, paid: 0 };
       row.sales += order.status === "cancelled" ? 0 : order.amount;
-      row.received += receiptsByOrder[order.id] ?? 0;
+      row.received += order.status === "cancelled" ? 0 : order.depositAmount + (receiptsByOrder[order.id] ?? 0);
       shops.set(order.shopName, row);
     });
     data.payments.forEach((payment) => {
@@ -514,12 +585,12 @@ function ReportsPanel({ data, receiptsByOrder }: { data: AppData; receiptsByOrde
 
   return (
     <section className="card table-card">
-      <h2><BarChart3 size={18} /> 店铺汇总</h2>
+      <h2><BarChart3 size={18} /> 经办人汇总</h2>
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>店铺</th>
+              <th>经办人</th>
               <th>订单总额</th>
               <th>已收款</th>
               <th>总支出</th>
@@ -608,10 +679,10 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function IconButton({ label, onClick }: { label: string; onClick: () => void }) {
+function IconButton({ label, onClick, variant = "danger" }: { label: string; onClick: () => void; variant?: "danger" | "edit" }) {
   return (
-    <button className="icon-button" type="button" aria-label={label} onClick={onClick}>
-      <Trash2 size={15} />
+    <button className={`icon-button ${variant}`} type="button" aria-label={label} onClick={onClick}>
+      {variant === "edit" ? <Pencil size={15} /> : <Trash2 size={15} />}
     </button>
   );
 }
