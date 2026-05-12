@@ -14,6 +14,7 @@ grant execute on function public.is_allowed_app_user() to authenticated;
 alter table public.orders add column if not exists deposit_amount numeric(12, 2) not null default 0 check (deposit_amount >= 0);
 alter table public.orders add column if not exists receivable_amount numeric(12, 2) not null default 0 check (receivable_amount >= 0);
 alter table public.orders add column if not exists photo_path text not null default '';
+alter table public.orders add column if not exists spreadsheet_path text not null default '';
 alter table public.orders drop constraint if exists orders_status_check;
 update public.orders
 set status = case
@@ -35,6 +36,29 @@ on conflict (id) do update
 set public = false,
     file_size_limit = 10485760,
     allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'order-spreadsheets',
+  'order-spreadsheets',
+  false,
+  20971520,
+  array[
+    'text/csv',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/octet-stream'
+  ]
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = 20971520,
+    allowed_mime_types = array[
+      'text/csv',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/octet-stream'
+    ];
 
 drop policy if exists "Users can read own orders" on public.orders;
 drop policy if exists "Users can insert own orders" on public.orders;
@@ -63,6 +87,10 @@ drop policy if exists "Allowed users can read order photos" on storage.objects;
 drop policy if exists "Allowed users can upload order photos" on storage.objects;
 drop policy if exists "Allowed users can update order photos" on storage.objects;
 drop policy if exists "Allowed users can delete order photos" on storage.objects;
+drop policy if exists "Allowed users can read order spreadsheets" on storage.objects;
+drop policy if exists "Allowed users can upload order spreadsheets" on storage.objects;
+drop policy if exists "Allowed users can update order spreadsheets" on storage.objects;
+drop policy if exists "Allowed users can delete order spreadsheets" on storage.objects;
 
 create policy "Allowed users can read orders"
   on public.orders for select
@@ -130,3 +158,24 @@ create policy "Allowed users can delete order photos"
   on storage.objects for delete
   to authenticated
   using (bucket_id = 'order-photos' and public.is_allowed_app_user());
+
+create policy "Allowed users can read order spreadsheets"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'order-spreadsheets' and public.is_allowed_app_user());
+
+create policy "Allowed users can upload order spreadsheets"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'order-spreadsheets' and public.is_allowed_app_user());
+
+create policy "Allowed users can update order spreadsheets"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'order-spreadsheets' and public.is_allowed_app_user())
+  with check (bucket_id = 'order-spreadsheets' and public.is_allowed_app_user());
+
+create policy "Allowed users can delete order spreadsheets"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'order-spreadsheets' and public.is_allowed_app_user());

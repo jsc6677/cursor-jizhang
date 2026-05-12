@@ -381,6 +381,10 @@ function OrderDetailPage({
           <DetailItem label="创建时间" value={new Date(order.createdAt).toLocaleString("zh-CN")} />
         </div>
         <div className="detail-note">
+          <strong>电子表格</strong>
+          <p>{order.spreadsheetUrl ? <a href={order.spreadsheetUrl} target="_blank" rel="noreferrer">查看/下载电子表格</a> : "暂无电子表格"}</p>
+        </div>
+        <div className="detail-note">
           <strong>备注</strong>
           <p>{order.note || "无"}</p>
         </div>
@@ -433,7 +437,9 @@ function OrdersPanel({
     receivableAmount: 0,
     status: "ongoing",
     photoPath: "",
+    spreadsheetPath: "",
     photoFile: null,
+    spreadsheetFile: null,
     note: "",
   });
   const [form, setForm] = useState<OrderInput>({
@@ -441,9 +447,13 @@ function OrdersPanel({
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState("");
+  const [spreadsheetName, setSpreadsheetName] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const confirmed = window.confirm(editingId ? "确认保存这次订单修改吗？" : "确认保存这个订单吗？");
+    if (!confirmed) return;
+
     if (editingId) {
       await onUpdate(editingId, form);
     } else {
@@ -451,6 +461,7 @@ function OrdersPanel({
     }
     setEditingId(null);
     setPhotoName("");
+    setSpreadsheetName("");
     setForm(emptyOrderForm());
   }
 
@@ -460,6 +471,7 @@ function OrdersPanel({
 
     setEditingId(order.id);
     setPhotoName(order.photoPath ? "已上传订单照片" : "");
+    setSpreadsheetName(order.spreadsheetPath ? "已上传电子表格" : "");
     setForm({
       orderNo: order.orderNo,
       shopName: order.shopName,
@@ -470,7 +482,9 @@ function OrdersPanel({
       receivableAmount: order.receivableAmount,
       status: order.status,
       photoPath: order.photoPath,
+      spreadsheetPath: order.spreadsheetPath,
       photoFile: null,
+      spreadsheetFile: null,
       note: order.note,
     });
   }
@@ -478,7 +492,16 @@ function OrdersPanel({
   function cancelEdit() {
     setEditingId(null);
     setPhotoName("");
+    setSpreadsheetName("");
     setForm(emptyOrderForm());
+  }
+
+  function confirmRemove(orderId: string) {
+    const order = data.orders.find((item) => item.id === orderId);
+    const label = order ? `${order.orderNo} / ${order.customerName}` : "这个订单";
+    if (window.confirm(`确认删除 ${label} 吗？删除后无法恢复。`)) {
+      void onRemove(orderId);
+    }
   }
 
   return (
@@ -506,6 +529,19 @@ function OrdersPanel({
             />
             {photoName && <span className="field-hint">{photoName}</span>}
           </label>
+          <label>
+            电子表格
+            <input
+              type="file"
+              accept=".xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setSpreadsheetName(file?.name ?? "");
+                setForm({ ...form, spreadsheetFile: file });
+              }}
+            />
+            {spreadsheetName && <span className="field-hint">{spreadsheetName}</span>}
+          </label>
           <TextField label="备注" value={form.note} onChange={(value) => setForm({ ...form, note: value })} />
         </div>
         <div className="form-actions">
@@ -528,6 +564,7 @@ function OrdersPanel({
                 <th>已收款</th>
                 <th>代收款</th>
                 <th>照片</th>
+                <th>电子表格</th>
                 <th>状态</th>
                 <th></th>
               </tr>
@@ -543,6 +580,7 @@ function OrdersPanel({
                   <td>{currency(order.depositAmount)}</td>
                   <td>{currency(order.receivableAmount)}</td>
                   <td>{order.photoUrl ? <a href={order.photoUrl} target="_blank" rel="noreferrer">查看</a> : "-"}</td>
+                  <td>{order.spreadsheetUrl ? <a href={order.spreadsheetUrl} target="_blank" rel="noreferrer">下载</a> : "-"}</td>
                   <td>
                     <select
                       className="status-select"
@@ -558,7 +596,9 @@ function OrdersPanel({
                           receivableAmount: order.receivableAmount,
                           status: event.target.value as OrderStatus,
                           photoPath: order.photoPath,
+                          spreadsheetPath: order.spreadsheetPath,
                           photoFile: null,
+                          spreadsheetFile: null,
                           note: order.note,
                         });
                       }}
@@ -569,7 +609,7 @@ function OrdersPanel({
                   <td>
                     <div className="row-actions">
                       <IconButton label="编辑订单" variant="edit" onClick={() => startEdit(order.id)} />
-                      <IconButton label="删除订单" onClick={() => void onRemove(order.id)} />
+                      <IconButton label="删除订单" onClick={() => confirmRemove(order.id)} />
                     </div>
                   </td>
                 </tr>

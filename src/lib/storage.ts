@@ -3,6 +3,7 @@ import type { AppData, Order, OrderInput, Payment, PaymentInput, Receipt, Receip
 
 const STORAGE_KEY = "shop-ledger-data";
 const ORDER_PHOTO_BUCKET = "order-photos";
+const ORDER_SPREADSHEET_BUCKET = "order-spreadsheets";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -20,6 +21,8 @@ const sampleData: AppData = {
       status: "ongoing",
       photoPath: "",
       photoUrl: "",
+      spreadsheetPath: "",
+      spreadsheetUrl: "",
       note: "演示订单，可删除",
       createdAt: new Date().toISOString(),
     },
@@ -53,8 +56,8 @@ function newId() {
   return crypto.randomUUID();
 }
 
-function cleanOrderInput(input: OrderInput): Omit<OrderInput, "photoFile"> {
-  const { photoFile: _photoFile, ...order } = input;
+function cleanOrderInput(input: OrderInput): Omit<OrderInput, "photoFile" | "spreadsheetFile"> {
+  const { photoFile: _photoFile, spreadsheetFile: _spreadsheetFile, ...order } = input;
   return order;
 }
 
@@ -84,28 +87,28 @@ async function getCurrentUserId() {
   return data.user?.id ?? null;
 }
 
-async function getSignedPhotoUrl(photoPath: string) {
-  if (!supabase || !photoPath) return "";
+async function getSignedFileUrl(bucket: string, path: string) {
+  if (!supabase || !path) return "";
 
-  const { data, error } = await supabase.storage.from(ORDER_PHOTO_BUCKET).createSignedUrl(photoPath, 60 * 60);
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
   if (error) return "";
   return data.signedUrl;
 }
 
-async function uploadOrderPhoto(file: File | null | undefined, orderId: string, userId: string | null) {
+async function uploadOrderFile(bucket: string, file: File | null | undefined, orderId: string, userId: string | null) {
   if (!supabase || !file || !userId) return "";
 
-  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  const photoPath = `${userId}/${orderId}/${Date.now()}.${extension}`;
-  const { error } = await supabase.storage.from(ORDER_PHOTO_BUCKET).upload(photoPath, file, {
+  const extension = file.name.split(".").pop()?.toLowerCase() || "file";
+  const filePath = `${userId}/${orderId}/${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
     cacheControl: "3600",
     upsert: true,
   });
   if (error) throw error;
-  return photoPath;
+  return filePath;
 }
 
-const toOrder = (row: Record<string, unknown>, photoUrl = ""): Order => ({
+const toOrder = (row: Record<string, unknown>, photoUrl = "", spreadsheetUrl = ""): Order => ({
   id: String(row.id),
   orderNo: String(row.order_no),
   shopName: String(row.shop_name),
@@ -117,6 +120,8 @@ const toOrder = (row: Record<string, unknown>, photoUrl = ""): Order => ({
   status: normalizeOrderStatus(row.status),
   photoPath: String(row.photo_path ?? ""),
   photoUrl,
+  spreadsheetPath: String(row.spreadsheet_path ?? ""),
+  spreadsheetUrl,
   note: String(row.note ?? ""),
   createdAt: String(row.created_at),
 });
@@ -158,7 +163,13 @@ export async function loadData(): Promise<AppData> {
   if (error) throw error;
 
   const mappedOrders = await Promise.all(
-    (orders ?? []).map(async (order) => toOrder(order, await getSignedPhotoUrl(String(order.photo_path ?? "")))),
+    (orders ?? []).map(async (order) =>
+      toOrder(
+        order,
+        await getSignedFileUrl(ORDER_PHOTO_BUCKET, String(order.photo_path ?? "")),
+        await getSignedFileUrl(ORDER_SPREADSHEET_BUCKET, String(order.spreadsheet_path ?? "")),
+      ),
+    ),
   );
 
   return {
@@ -171,14 +182,15 @@ export async function loadData(): Promise<AppData> {
 export async function saveOrder(input: OrderInput): Promise<Order> {
   if (!supabase) {
     const data = readLocal();
-    const order: Order = { ...cleanOrderInput(input), id: newId(), photoUrl: "", createdAt: new Date().toISOString() };
+    const order: Order = { ...cleanOrderInput(input), id: newId(), photoUrl: "", spreadsheetUrl: "", createdAt: new Date().toISOString() };
     writeLocal({ ...data, orders: [order, ...data.orders] });
     return order;
   }
 
   const userId = await getCurrentUserId();
   const orderId = newId();
-  const photoPath = await uploadOrderPhoto(input.photoFile, orderId, userId);
+  const photoPath = await uploadOrderFile(ORDER_PHOTO_BUCKET, input.photoFile, orderId, userId);
+  const spreadsheetPath = await uploadOrderFile(ORDER_SPREADSHEET_BUCKET, input.spreadsheetFile, orderId, userId);
   const { data, error } = await supabase
     .from("orders")
     .insert({
@@ -193,13 +205,18 @@ export async function saveOrder(input: OrderInput): Promise<Order> {
       receivable_amount: input.receivableAmount,
       status: input.status,
       photo_path: photoPath || input.photoPath,
+      spreadsheet_path: spreadsheetPath || input.spreadsheetPath,
       note: input.note,
     })
     .select()
     .single();
 
   if (error) throw error;
-  return toOrder(data, await getSignedPhotoUrl(String(data.photo_path ?? "")));
+  return toOrder(
+    data,
+    await getSignedFileUrl(ORDER_PHOTO_BUCKET, String(data.photo_path ?? "")),
+    await getSignedFileUrl(ORDER_SPREADSHEET_BUCKET, String(data.spreadsheet_path ?? "")),
+  );
 }
 
 export async function updateOrder(id: string, input: OrderInput): Promise<Order> {
@@ -208,13 +225,14 @@ export async function updateOrder(id: string, input: OrderInput): Promise<Order>
     const nextOrder = cleanOrderInput(input);
     writeLocal({
       ...data,
-      orders: data.orders.map((order) => (order.id === id ? { ...order, ...nextOrder, photoUrl: "" } : order)),
+      orders: data.orders.map((order) => (order.id === id ? { ...order, ...nextOrder, photoUrl: "", spreadsheetUrl: "" } : order)),
     });
-    return { ...nextOrder, id, photoUrl: "", createdAt: new Date().toISOString() };
+    return { ...nextOrder, id, photoUrl: "", spreadsheetUrl: "", createdAt: new Date().toISOString() };
   }
 
   const userId = await getCurrentUserId();
-  const uploadedPhotoPath = await uploadOrderPhoto(input.photoFile, id, userId);
+  const uploadedPhotoPath = await uploadOrderFile(ORDER_PHOTO_BUCKET, input.photoFile, id, userId);
+  const uploadedSpreadsheetPath = await uploadOrderFile(ORDER_SPREADSHEET_BUCKET, input.spreadsheetFile, id, userId);
   const { data, error } = await supabase
     .from("orders")
     .update({
@@ -227,6 +245,7 @@ export async function updateOrder(id: string, input: OrderInput): Promise<Order>
       receivable_amount: input.receivableAmount,
       status: input.status,
       photo_path: uploadedPhotoPath || input.photoPath,
+      spreadsheet_path: uploadedSpreadsheetPath || input.spreadsheetPath,
       note: input.note,
     })
     .eq("id", id)
@@ -234,7 +253,11 @@ export async function updateOrder(id: string, input: OrderInput): Promise<Order>
     .single();
 
   if (error) throw error;
-  return toOrder(data, await getSignedPhotoUrl(String(data.photo_path ?? "")));
+  return toOrder(
+    data,
+    await getSignedFileUrl(ORDER_PHOTO_BUCKET, String(data.photo_path ?? "")),
+    await getSignedFileUrl(ORDER_SPREADSHEET_BUCKET, String(data.spreadsheet_path ?? "")),
+  );
 }
 
 export async function removeOrder(id: string): Promise<void> {
