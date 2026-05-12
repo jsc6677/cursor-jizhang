@@ -147,7 +147,7 @@ export default function App() {
 
   function exportCsv() {
     const rows = [
-      ["类型", "送货日期", "经办人", "对象", "金额", "定金", "代收款", "状态/方式", "备注"],
+      ["类型", "送货日期", "经办人", "对象", "金额", "已收款", "代收款", "状态/方式", "备注"],
       ...data.orders.map((order) => [
         "订单",
         order.orderDate,
@@ -376,7 +376,7 @@ function OrderDetailPage({
           <DetailItem label="经办人" value={order.shopName} />
           <DetailItem label="客户" value={order.customerName} />
           <DetailItem label="订单金额" value={currency(order.amount)} />
-          <DetailItem label="定金" value={currency(order.depositAmount)} />
+          <DetailItem label="已收款" value={currency(order.depositAmount)} />
           <DetailItem label="代收款" value={currency(order.receivableAmount)} />
           <DetailItem label="后续收款" value={currency(receivedAmount)} />
           <DetailItem label="已收合计" value={currency(totalReceived)} />
@@ -525,7 +525,7 @@ function OrdersPanel({
           <TextField label="客户" value={form.customerName} onChange={(value) => setForm({ ...form, customerName: value })} required />
           <DateField label="送货日期" value={form.orderDate} onChange={(value) => setForm({ ...form, orderDate: value })} />
           <NumberField label="订单金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value, receivableAmount: Math.max(value - form.depositAmount, 0) })} />
-          <NumberField label="定金" value={form.depositAmount} onChange={(value) => setForm({ ...form, depositAmount: value, receivableAmount: Math.max(form.amount - value, 0) })} />
+          <NumberField label="已收款" value={form.depositAmount} onChange={(value) => setForm({ ...form, depositAmount: value, receivableAmount: Math.max(form.amount - value, 0) })} />
           <NumberField label="代收款" value={form.receivableAmount} onChange={(value) => setForm({ ...form, receivableAmount: value })} />
           <label>
             订单照片
@@ -559,7 +559,7 @@ function OrdersPanel({
                 <th>经办人</th>
                 <th>客户</th>
                 <th>金额</th>
-                <th>定金</th>
+                <th>已收款</th>
                 <th>代收款</th>
                 <th>照片</th>
                 <th>状态</th>

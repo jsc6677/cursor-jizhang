@@ -149,7 +149,7 @@ export async function loadData(): Promise<AppData> {
 
   const [{ data: orders, error: ordersError }, { data: receipts, error: receiptsError }, { data: payments, error: paymentsError }] =
     await Promise.all([
-      supabase.from("orders").select("*").order("order_date", { ascending: false }),
+      supabase.from("orders").select("*").order("created_at", { ascending: false }),
       supabase.from("receipts").select("*").order("received_at", { ascending: false }),
       supabase.from("payments").select("*").order("paid_at", { ascending: false }),
     ]);
