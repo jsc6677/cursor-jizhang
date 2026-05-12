@@ -55,6 +55,12 @@ as $$
   );
 $$;
 
+grant usage on schema public to anon, authenticated;
+grant execute on function public.is_allowed_app_user() to authenticated;
+grant select, insert, delete on public.orders to authenticated;
+grant select, insert, delete on public.receipts to authenticated;
+grant select, insert, delete on public.payments to authenticated;
+
 drop policy if exists "Users can read own orders" on public.orders;
 drop policy if exists "Users can insert own orders" on public.orders;
 drop policy if exists "Users can delete own orders" on public.orders;
