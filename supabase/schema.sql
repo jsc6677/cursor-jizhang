@@ -9,14 +9,27 @@ create table if not exists public.orders (
   order_date date not null,
   amount numeric(12, 2) not null check (amount >= 0),
   deposit_amount numeric(12, 2) not null default 0 check (deposit_amount >= 0),
-  status text not null check (status in ('unpaid', 'partial', 'paid', 'cancelled')),
+  receivable_amount numeric(12, 2) not null default 0 check (receivable_amount >= 0),
+  status text not null check (status in ('ongoing', 'completed')),
   photo_path text not null default '',
   note text not null default '',
   created_at timestamptz not null default now()
 );
 
 alter table public.orders add column if not exists deposit_amount numeric(12, 2) not null default 0 check (deposit_amount >= 0);
+alter table public.orders add column if not exists receivable_amount numeric(12, 2) not null default 0 check (receivable_amount >= 0);
 alter table public.orders add column if not exists photo_path text not null default '';
+alter table public.orders drop constraint if exists orders_status_check;
+update public.orders
+set status = case
+    when status in ('paid', 'completed') then 'completed'
+    else 'ongoing'
+  end,
+  receivable_amount = case
+    when receivable_amount = 0 then greatest(amount - deposit_amount, 0)
+    else receivable_amount
+  end;
+alter table public.orders add constraint orders_status_check check (status in ('ongoing', 'completed'));
 
 create table if not exists public.receipts (
   id uuid primary key default gen_random_uuid(),

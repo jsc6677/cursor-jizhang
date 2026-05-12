@@ -399,6 +399,22 @@ th {
   background: #e2e8f0;
 }
 
+.badge.ongoing {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.badge.completed {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.status-select {
+  min-width: 96px;
+  margin-top: 0;
+  padding: 7px 10px;
+}
+
 .icon-button {
   width: 34px;
   height: 34px;

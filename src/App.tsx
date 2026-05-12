@@ -10,10 +10,8 @@ import type { AppData, Order, OrderInput, OrderStatus, Receipt, PaymentInput, Re
 const emptyData: AppData = { orders: [], receipts: [], payments: [] };
 
 const orderStatusText: Record<OrderStatus, string> = {
-  unpaid: "未收款",
-  partial: "部分收款",
-  paid: "已收款",
-  cancelled: "已取消",
+  ongoing: "进行中",
+  completed: "完成",
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -105,7 +103,7 @@ export default function App() {
   }, [data.receipts]);
 
   const stats = useMemo(() => {
-    const activeOrders = data.orders.filter((order) => order.status !== "cancelled");
+    const activeOrders = data.orders;
     const sales = activeOrders.reduce((sum, order) => sum + order.amount, 0);
     const deposits = activeOrders.reduce((sum, order) => sum + order.depositAmount, 0);
     const received = data.receipts.reduce((sum, receipt) => sum + receipt.amount, deposits);
@@ -149,7 +147,7 @@ export default function App() {
 
   function exportCsv() {
     const rows = [
-      ["类型", "日期", "经办人", "对象", "金额", "定金", "状态/方式", "备注"],
+      ["类型", "送货日期", "经办人", "对象", "金额", "定金", "代收款", "状态/方式", "备注"],
       ...data.orders.map((order) => [
         "订单",
         order.orderDate,
@@ -157,12 +155,13 @@ export default function App() {
         order.customerName,
         String(order.amount),
         String(order.depositAmount),
+        String(order.receivableAmount),
         orderStatusText[order.status],
         order.note,
       ]),
       ...data.receipts.map((receipt) => {
         const order = data.orders.find((item) => item.id === receipt.orderId);
-        return ["收款", receipt.receivedAt, order?.shopName ?? "", order?.customerName ?? "", String(receipt.amount), "", receipt.method, receipt.note];
+        return ["收款", receipt.receivedAt, order?.shopName ?? "", order?.customerName ?? "", String(receipt.amount), "", "", receipt.method, receipt.note];
       }),
       ...data.payments.map((payment) => [
         "付款",
@@ -170,6 +169,7 @@ export default function App() {
         payment.shopName,
         payment.payee,
         String(payment.amount),
+        "",
         "",
         payment.category,
         payment.note,
@@ -372,11 +372,12 @@ function OrderDetailPage({
           <span className={`badge ${order.status}`}>{orderStatusText[order.status]}</span>
         </div>
         <div className="detail-grid">
-          <DetailItem label="订单日期" value={order.orderDate} />
+          <DetailItem label="送货日期" value={order.orderDate} />
           <DetailItem label="经办人" value={order.shopName} />
           <DetailItem label="客户" value={order.customerName} />
           <DetailItem label="订单金额" value={currency(order.amount)} />
           <DetailItem label="定金" value={currency(order.depositAmount)} />
+          <DetailItem label="代收款" value={currency(order.receivableAmount)} />
           <DetailItem label="后续收款" value={currency(receivedAmount)} />
           <DetailItem label="已收合计" value={currency(totalReceived)} />
           <DetailItem label="未收款" value={currency(outstanding)} tone="warning" />
@@ -463,7 +464,8 @@ function OrdersPanel({
     orderDate: today,
     amount: 0,
     depositAmount: 0,
-    status: "unpaid",
+    receivableAmount: 0,
+    status: "ongoing",
     photoPath: "",
     photoFile: null,
     note: "",
@@ -499,6 +501,7 @@ function OrdersPanel({
       orderDate: order.orderDate,
       amount: order.amount,
       depositAmount: order.depositAmount,
+      receivableAmount: order.receivableAmount,
       status: order.status,
       photoPath: order.photoPath,
       photoFile: null,
@@ -520,15 +523,10 @@ function OrdersPanel({
           <TextField label="订单号" value={form.orderNo} onChange={(value) => setForm({ ...form, orderNo: value })} required />
           <TextField label="经办人" value={form.shopName} onChange={(value) => setForm({ ...form, shopName: value })} required />
           <TextField label="客户" value={form.customerName} onChange={(value) => setForm({ ...form, customerName: value })} required />
-          <DateField label="订单日期" value={form.orderDate} onChange={(value) => setForm({ ...form, orderDate: value })} />
-          <NumberField label="订单金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value })} />
-          <NumberField label="定金" value={form.depositAmount} onChange={(value) => setForm({ ...form, depositAmount: value })} />
-          <label>
-            状态
-            <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as OrderStatus })}>
-              {Object.entries(orderStatusText).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
+          <DateField label="送货日期" value={form.orderDate} onChange={(value) => setForm({ ...form, orderDate: value })} />
+          <NumberField label="订单金额" value={form.amount} onChange={(value) => setForm({ ...form, amount: value, receivableAmount: Math.max(value - form.depositAmount, 0) })} />
+          <NumberField label="定金" value={form.depositAmount} onChange={(value) => setForm({ ...form, depositAmount: value, receivableAmount: Math.max(form.amount - value, 0) })} />
+          <NumberField label="代收款" value={form.receivableAmount} onChange={(value) => setForm({ ...form, receivableAmount: value })} />
           <label>
             订单照片
             <input
@@ -557,12 +555,12 @@ function OrdersPanel({
             <thead>
               <tr>
                 <th>订单号</th>
-                <th>日期</th>
+                <th>送货日期</th>
                 <th>经办人</th>
                 <th>客户</th>
                 <th>金额</th>
                 <th>定金</th>
-                <th>已收</th>
+                <th>代收款</th>
                 <th>照片</th>
                 <th>状态</th>
                 <th></th>
@@ -577,9 +575,31 @@ function OrdersPanel({
                   <td>{order.customerName}</td>
                   <td>{currency(order.amount)}</td>
                   <td>{currency(order.depositAmount)}</td>
-                  <td>{currency(order.depositAmount + (receiptsByOrder[order.id] ?? 0))}</td>
+                  <td>{currency(order.receivableAmount)}</td>
                   <td>{order.photoUrl ? <a href={order.photoUrl} target="_blank" rel="noreferrer">查看</a> : "-"}</td>
-                  <td><span className={`badge ${order.status}`}>{orderStatusText[order.status]}</span></td>
+                  <td>
+                    <select
+                      className="status-select"
+                      value={order.status}
+                      onChange={(event) => {
+                        void onUpdate(order.id, {
+                          orderNo: order.orderNo,
+                          shopName: order.shopName,
+                          customerName: order.customerName,
+                          orderDate: order.orderDate,
+                          amount: order.amount,
+                          depositAmount: order.depositAmount,
+                          receivableAmount: order.receivableAmount,
+                          status: event.target.value as OrderStatus,
+                          photoPath: order.photoPath,
+                          photoFile: null,
+                          note: order.note,
+                        });
+                      }}
+                    >
+                      {Object.entries(orderStatusText).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </td>
                   <td>
                     <div className="row-actions">
                       <IconButton label="编辑订单" variant="edit" onClick={() => startEdit(order.id)} />
@@ -714,8 +734,8 @@ function ReportsPanel({ data, receiptsByOrder }: { data: AppData; receiptsByOrde
     const shops = new Map<string, { sales: number; received: number; paid: number }>();
     data.orders.forEach((order) => {
       const row = shops.get(order.shopName) ?? { sales: 0, received: 0, paid: 0 };
-      row.sales += order.status === "cancelled" ? 0 : order.amount;
-      row.received += order.status === "cancelled" ? 0 : order.depositAmount + (receiptsByOrder[order.id] ?? 0);
+      row.sales += order.amount;
+      row.received += order.depositAmount + (receiptsByOrder[order.id] ?? 0);
       shops.set(order.shopName, row);
     });
     data.payments.forEach((payment) => {

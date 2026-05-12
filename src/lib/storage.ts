@@ -16,7 +16,8 @@ const sampleData: AppData = {
       orderDate: today,
       amount: 1280,
       depositAmount: 300,
-      status: "partial",
+      receivableAmount: 980,
+      status: "ongoing",
       photoPath: "",
       photoUrl: "",
       note: "演示订单，可删除",
@@ -55,6 +56,10 @@ function newId() {
 function cleanOrderInput(input: OrderInput): Omit<OrderInput, "photoFile"> {
   const { photoFile: _photoFile, ...order } = input;
   return order;
+}
+
+function normalizeOrderStatus(status: unknown): Order["status"] {
+  return status === "paid" || status === "completed" ? "completed" : "ongoing";
 }
 
 function readLocal(): AppData {
@@ -108,7 +113,8 @@ const toOrder = (row: Record<string, unknown>, photoUrl = ""): Order => ({
   orderDate: String(row.order_date),
   amount: Number(row.amount),
   depositAmount: Number(row.deposit_amount ?? 0),
-  status: row.status as Order["status"],
+  receivableAmount: Number(row.receivable_amount ?? Math.max(Number(row.amount) - Number(row.deposit_amount ?? 0), 0)),
+  status: normalizeOrderStatus(row.status),
   photoPath: String(row.photo_path ?? ""),
   photoUrl,
   note: String(row.note ?? ""),
@@ -184,6 +190,7 @@ export async function saveOrder(input: OrderInput): Promise<Order> {
       order_date: input.orderDate,
       amount: input.amount,
       deposit_amount: input.depositAmount,
+      receivable_amount: input.receivableAmount,
       status: input.status,
       photo_path: photoPath || input.photoPath,
       note: input.note,
@@ -217,6 +224,7 @@ export async function updateOrder(id: string, input: OrderInput): Promise<Order>
       order_date: input.orderDate,
       amount: input.amount,
       deposit_amount: input.depositAmount,
+      receivable_amount: input.receivableAmount,
       status: input.status,
       photo_path: uploadedPhotoPath || input.photoPath,
       note: input.note,

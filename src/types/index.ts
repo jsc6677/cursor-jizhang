@@ -1,4 +1,4 @@
-export type OrderStatus = "unpaid" | "partial" | "paid" | "cancelled";
+export type OrderStatus = "ongoing" | "completed";
 
 export interface Order {
   id: string;
@@ -8,6 +8,7 @@ export interface Order {
   orderDate: string;
   amount: number;
   depositAmount: number;
+  receivableAmount: number;
   status: OrderStatus;
   photoPath: string;
   photoUrl: string;

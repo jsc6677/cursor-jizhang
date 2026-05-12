@@ -12,7 +12,19 @@ $$;
 grant usage on schema public to anon, authenticated;
 grant execute on function public.is_allowed_app_user() to authenticated;
 alter table public.orders add column if not exists deposit_amount numeric(12, 2) not null default 0 check (deposit_amount >= 0);
+alter table public.orders add column if not exists receivable_amount numeric(12, 2) not null default 0 check (receivable_amount >= 0);
 alter table public.orders add column if not exists photo_path text not null default '';
+alter table public.orders drop constraint if exists orders_status_check;
+update public.orders
+set status = case
+    when status in ('paid', 'completed') then 'completed'
+    else 'ongoing'
+  end,
+  receivable_amount = case
+    when receivable_amount = 0 then greatest(amount - deposit_amount, 0)
+    else receivable_amount
+  end;
+alter table public.orders add constraint orders_status_check check (status in ('ongoing', 'completed'));
 grant select, insert, update, delete on public.orders to authenticated;
 grant select, insert, update, delete on public.receipts to authenticated;
 grant select, insert, update, delete on public.payments to authenticated;
