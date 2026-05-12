@@ -5,7 +5,7 @@ import { BarChart3, Download, LogOut, Pencil, Plus, RefreshCw, ShieldCheck, Tras
 import { allowedEmailText, isAllowedEmail } from "./lib/access";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { loadData, removeOrder, removePayment, removeReceipt, saveOrder, savePayment, saveReceipt, updateOrder } from "./lib/storage";
-import type { AppData, OrderInput, OrderStatus, PaymentInput, ReceiptInput } from "./types";
+import type { AppData, Order, OrderInput, OrderStatus, Receipt, PaymentInput, ReceiptInput } from "./types";
 
 const emptyData: AppData = { orders: [], receipts: [], payments: [] };
 
@@ -38,6 +38,11 @@ function getErrorMessage(err: unknown) {
   return "操作失败";
 }
 
+function getOrderIdFromHash() {
+  const match = window.location.hash.match(/^#\/orders\/(.+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
@@ -47,6 +52,7 @@ export default function App() {
   const [data, setData] = useState<AppData>(emptyData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => getOrderIdFromHash());
 
   async function refresh() {
     setLoading(true);
@@ -84,6 +90,12 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured || session) void refresh();
   }, [session]);
+
+  useEffect(() => {
+    const handleHashChange = () => setSelectedOrderId(getOrderIdFromHash());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
 
   const receiptsByOrder = useMemo(() => {
     return data.receipts.reduce<Record<string, number>>((acc, receipt) => {
@@ -219,6 +231,43 @@ export default function App() {
     );
   }
 
+  const selectedOrder = selectedOrderId ? data.orders.find((order) => order.id === selectedOrderId) : null;
+  if (selectedOrderId) {
+    return (
+      <main className="app-shell">
+        <header className="hero compact-hero">
+          <div>
+            <p className="eyebrow">订单详情</p>
+            <h1>中合订单管理</h1>
+            <p>更新后请及时导出！避免丢失数据！</p>
+          </div>
+          <div className="hero-actions">
+            <a className="secondary button-link" href="#">
+              返回订单列表
+            </a>
+            <button className="secondary" onClick={() => void refresh()} disabled={loading}>
+              <RefreshCw size={16} />
+              刷新
+            </button>
+          </div>
+        </header>
+        {error && <div className="notice error">{error}</div>}
+        {selectedOrder ? (
+          <OrderDetailPage
+            order={selectedOrder}
+            receipts={data.receipts.filter((receipt) => receipt.orderId === selectedOrder.id)}
+            receivedAmount={receiptsByOrder[selectedOrder.id] ?? 0}
+          />
+        ) : (
+          <section className="card detail-card">
+            <h2>没有找到这个订单</h2>
+            <p className="muted-text">订单可能已删除，或数据还在加载。可以刷新后再试。</p>
+          </section>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="hero">
@@ -297,6 +346,100 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function OrderDetailPage({
+  order,
+  receipts,
+  receivedAmount,
+}: {
+  order: Order;
+  receipts: Receipt[];
+  receivedAmount: number;
+}) {
+  const totalReceived = order.depositAmount + receivedAmount;
+  const outstanding = Math.max(order.amount - totalReceived, 0);
+
+  return (
+    <section className="detail-layout">
+      <article className="card detail-card">
+        <div className="detail-title">
+          <div>
+            <p className="eyebrow dark">订单号</p>
+            <h2>{order.orderNo}</h2>
+          </div>
+          <span className={`badge ${order.status}`}>{orderStatusText[order.status]}</span>
+        </div>
+        <div className="detail-grid">
+          <DetailItem label="订单日期" value={order.orderDate} />
+          <DetailItem label="经办人" value={order.shopName} />
+          <DetailItem label="客户" value={order.customerName} />
+          <DetailItem label="订单金额" value={currency(order.amount)} />
+          <DetailItem label="定金" value={currency(order.depositAmount)} />
+          <DetailItem label="后续收款" value={currency(receivedAmount)} />
+          <DetailItem label="已收合计" value={currency(totalReceived)} />
+          <DetailItem label="未收款" value={currency(outstanding)} tone="warning" />
+          <DetailItem label="创建时间" value={new Date(order.createdAt).toLocaleString("zh-CN")} />
+        </div>
+        <div className="detail-note">
+          <strong>备注</strong>
+          <p>{order.note || "无"}</p>
+        </div>
+      </article>
+
+      <article className="card detail-card">
+        <h2>订单照片</h2>
+        {order.photoUrl ? (
+          <a href={order.photoUrl} target="_blank" rel="noreferrer">
+            <img className="order-photo" src={order.photoUrl} alt={`订单 ${order.orderNo}`} />
+          </a>
+        ) : (
+          <p className="muted-text">暂无订单照片</p>
+        )}
+      </article>
+
+      <article className="card detail-card detail-wide">
+        <h2>收款记录</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>金额</th>
+                <th>方式</th>
+                <th>备注</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receipts.length ? (
+                receipts.map((receipt) => (
+                  <tr key={receipt.id}>
+                    <td>{receipt.receivedAt}</td>
+                    <td>{currency(receipt.amount)}</td>
+                    <td>{receipt.method}</td>
+                    <td>{receipt.note || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4}>暂无后续收款记录</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function DetailItem({ label, value, tone }: { label: string; value: string; tone?: "warning" }) {
+  return (
+    <div className={`detail-item ${tone ?? ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -428,7 +571,7 @@ function OrdersPanel({
             <tbody>
               {data.orders.map((order) => (
                 <tr key={order.id}>
-                  <td>{order.orderNo}</td>
+                  <td><a className="detail-link" href={`#/orders/${encodeURIComponent(order.id)}`}>{order.orderNo}</a></td>
                   <td>{order.orderDate}</td>
                   <td>{order.shopName}</td>
                   <td>{order.customerName}</td>

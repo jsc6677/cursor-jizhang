@@ -40,6 +40,17 @@ button {
   transition: 0.18s ease;
 }
 
+.button-link {
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 16px;
+  text-decoration: none;
+  font-weight: 800;
+}
+
 button:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(29, 78, 216, 0.14);
@@ -98,6 +109,10 @@ label {
   letter-spacing: -0.04em;
 }
 
+.compact-hero {
+  margin-bottom: 20px;
+}
+
 .hero p {
   margin: 0;
   max-width: 660px;
@@ -111,6 +126,10 @@ label {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.eyebrow.dark {
+  color: #66758c !important;
 }
 
 .hero-actions {
@@ -262,6 +281,96 @@ th {
   letter-spacing: 0.06em;
 }
 
+.detail-link {
+  color: #1d4ed8;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.detail-link:hover {
+  text-decoration: underline;
+}
+
+.detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  gap: 20px;
+}
+
+.detail-card {
+  min-width: 0;
+}
+
+.detail-wide {
+  grid-column: 1 / -1;
+}
+
+.detail-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.detail-title h2 {
+  margin-bottom: 0;
+  font-size: 28px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-item {
+  border-radius: 16px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.detail-item span {
+  display: block;
+  color: #66758c;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detail-item strong {
+  color: #152033;
+  font-size: 18px;
+}
+
+.detail-item.warning strong {
+  color: #b45309;
+}
+
+.detail-note {
+  border-top: 1px solid #edf2f8;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.detail-note strong {
+  color: #172554;
+}
+
+.detail-note p,
+.muted-text {
+  color: #66758c;
+  line-height: 1.7;
+}
+
+.order-photo {
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
 .badge {
   border-radius: 999px;
   display: inline-flex;
@@ -379,11 +488,16 @@ th {
 
 @media (max-width: 980px) {
   .hero,
-  .panel-layout {
+  .panel-layout,
+  .detail-layout {
     grid-template-columns: 1fr;
   }
 
   .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 
