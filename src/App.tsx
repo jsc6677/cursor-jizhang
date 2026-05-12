@@ -5,7 +5,7 @@ import { BarChart3, Download, LogOut, Pencil, Plus, RefreshCw, ShieldCheck, Tras
 import { allowedEmailText, isAllowedEmail } from "./lib/access";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { loadData, removeOrder, removePayment, removeReceipt, saveOrder, savePayment, saveReceipt, updateOrder } from "./lib/storage";
-import type { AppData, Order, OrderInput, OrderStatus, Receipt, PaymentInput, ReceiptInput } from "./types";
+import type { AppData, Order, OrderInput, OrderStatus, PaymentInput, ReceiptInput } from "./types";
 
 const emptyData: AppData = { orders: [], receipts: [], payments: [] };
 
@@ -255,7 +255,6 @@ export default function App() {
         {selectedOrder ? (
           <OrderDetailPage
             order={selectedOrder}
-            receipts={data.receipts.filter((receipt) => receipt.orderId === selectedOrder.id)}
             receivedAmount={receiptsByOrder[selectedOrder.id] ?? 0}
           />
         ) : (
@@ -351,11 +350,9 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
 
 function OrderDetailPage({
   order,
-  receipts,
   receivedAmount,
 }: {
   order: Order;
-  receipts: Receipt[];
   receivedAmount: number;
 }) {
   const totalReceived = order.depositAmount + receivedAmount;
@@ -400,37 +397,6 @@ function OrderDetailPage({
         )}
       </article>
 
-      <article className="card detail-card detail-wide">
-        <h2>收款记录</h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>日期</th>
-                <th>金额</th>
-                <th>方式</th>
-                <th>备注</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipts.length ? (
-                receipts.map((receipt) => (
-                  <tr key={receipt.id}>
-                    <td>{receipt.receivedAt}</td>
-                    <td>{currency(receipt.amount)}</td>
-                    <td>{receipt.method}</td>
-                    <td>{receipt.note || "-"}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4}>暂无后续收款记录</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </article>
     </section>
   );
 }
